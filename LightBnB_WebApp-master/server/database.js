@@ -128,14 +128,14 @@ exports.getAllReservations = getAllReservations;
 
 
 const getAllProperties = function (options, limit = 10) {
-  console.log('this is the minimum rating', options.minimum_rating);
   // create empty array to hold params used for the query
   const queryParams = [];
   // start query with info before WHERE clause
+  //we LEFT JOIN here to be able to see the new properties that do not yet have ratings
   let queryString = `
   SELECT properties.*, avg(property_reviews.rating) as average_rating
   FROM properties
-  JOIN property_reviews ON properties.id = property_id
+  LEFT JOIN property_reviews ON properties.id = property_id
   `;
 
   // check to see if city has been passed in as an option (if so add city to params array and create a WHERE clause)
@@ -145,33 +145,35 @@ const getAllProperties = function (options, limit = 10) {
   }
 
   //this one doesnt need template literal because it needs to be an exact match for owner id
+  //we start checking length here to see if it is the only option being passed into the array or if something else is being passed in to determine if we need a WHERE or AND
   if (options.owner_id) {
     queryParams.push(options.owner_id);
     if (queryParams.length === 1) {
-      queryString += `WHERE owner_id = $${queryParams.length} \n`;
+      //the reason we put queryParams.length everywhere is to get the placeholder value like $1 for example which will line up with our array value at that index when we go to run the query
+      queryString += `WHERE owner_id = $${queryParams.length}`;
     } else {
-      queryString += `AND owner_id = $${queryParams.length} \n`;
+      queryString += `AND owner_id = $${queryParams.length}`;
     }
   }
-
+  //we need to push two separate values here because there is a min and max price
   if (options.minimum_price_per_night && options.maximum_price_per_night) {
     queryParams.push(options.minimum_price_per_night * 100);
     queryParams.push(options.maximum_price_per_night * 100);
     if (queryParams.length === 2) {
-      queryString += `WHERE cost_per_night >= $${queryParams.length - 1} AND cost_per_night <= $${queryParams.length} \n`;
+      queryString += `WHERE cost_per_night >= $${queryParams.length - 1} AND cost_per_night <= $${queryParams.length}`;
     } else {
-      queryString += `AND cost_per_night >= $${queryParams.length - 1} AND cost_per_night <= $${queryParams.length} \n`;
+      queryString += `AND cost_per_night >= $${queryParams.length - 1} AND cost_per_night <= $${queryParams.length}`;
     }
   }
 
 
   queryString += `
-    GROUP BY properties.id \n
+    GROUP BY properties.id 
     `;
   //not sure how to do min rating
   if (options.minimum_rating) {
     queryParams.push(options.minimum_rating);
-    queryString += `HAVING AVG(property_reviews.rating) >= $${queryParams.length} \n`;
+    queryString += `HAVING AVG(property_reviews.rating) >= $${queryParams.length}`;
   }
 
 
@@ -183,7 +185,7 @@ const getAllProperties = function (options, limit = 10) {
   `;
 
   // 5
-  console.log(queryString, queryParams);
+  // console.log(queryString, queryParams);
 
   // run the query
   return pool.query(queryString, queryParams)
@@ -199,9 +201,17 @@ exports.getAllProperties = getAllProperties;
  * @return {Promise<{}>} A promise to the property.
  */
 const addProperty = function (property) {
-  const propertyId = Object.keys(properties).length + 1;
-  property.id = propertyId;
-  properties[propertyId] = property;
-  return Promise.resolve(property);
+  const values = [property.owner_id, property.title, property.description, property.thumbnail_photo_url, property.cover_photo_url, property.cost_per_night, property.parking_spaces, property.number_of_bathrooms, property.number_of_bedrooms, property.country, property.street, property.city, property.province, property.post_code];
+  const queryString = `
+  INSERT INTO properties(owner_id, title, description, thumbnail_photo_url, cover_photo_url, cost_per_night, parking_spaces, number_of_bathrooms, number_of_bedrooms, country, street, city, province, post_code)
+  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+  RETURNING *;
+  `;
+  return pool.query(queryString, values)
+    .then(res => {
+      console.log('it worked');
+      return res.rows[0];
+    })
+    .catch(err => console.error('query error', err.stack));
 };
 exports.addProperty = addProperty;
