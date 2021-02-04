@@ -64,10 +64,10 @@ exports.getUserWithId = getUserWithId;
  * @return {Promise<{}>} A promise to the user.
  */
 
- //why do we not need the template literals or % here?
+//why do we not need the template literals or % here?
 const addUser = function (user) {
   // const values = [`%${user.name}%`, `%${user.email}%`, `%${user.password}%`]
-  const values = [user.name, user.email, user.password]
+  const values = [user.name, user.email, user.password];
   const queryString = `
   INSERT INTO users (name, email, password)
   VALUES ($1, $2, $3)
@@ -75,7 +75,8 @@ const addUser = function (user) {
   `;
   return pool.query(queryString, values)
     .then(res => {
-      return res.rows[0]})
+      return res.rows[0];
+    })
     .catch(err => console.error('query error', err.stack));
 };
 exports.addUser = addUser;
@@ -88,7 +89,7 @@ exports.addUser = addUser;
  * @return {Promise<[{}]>} A promise to the reservations.
  */
 const getAllReservations = function (guest_id, limit = 10) {
-  const values = [guest_id, limit]
+  const values = [guest_id, limit];
   const queryString = `
   SELECT properties.*, reservations.*, avg(rating) as average_rating
 FROM reservations
@@ -99,10 +100,11 @@ AND reservations.end_date < now()::date
 GROUP BY properties.id, reservations.id
 ORDER BY reservations.start_date
 LIMIT $2;
-`
-return pool.query(queryString, values)
+`;
+  return pool.query(queryString, values)
     .then(res => {
-      return res.rows})
+      return res.rows;
+    })
     .catch(err => console.error('query error', err.stack));
 };
 exports.getAllReservations = getAllReservations;
@@ -115,14 +117,79 @@ exports.getAllReservations = getAllReservations;
  * @param {*} limit The number of results to return.
  * @return {Promise<[{}]>}  A promise to the properties.
  */
+// const getAllProperties = function (options, limit = 10) {
+//   return pool.query(`
+//   SELECT * FROM properties
+//   LIMIT $1
+//   `, [limit])
+//     .then(res => res.rows)
+//     .catch(err => console.error('query error', err.stack));
+// };
+
+
 const getAllProperties = function (options, limit = 10) {
-  return pool.query(`
-  SELECT * FROM properties
-  LIMIT $1
-  `, [limit])
-    .then(res => res.rows)
-    .catch(err => console.error('query error', err.stack));
+  console.log('this is the minimum rating', options.minimum_rating);
+  // create empty array to hold params used for the query
+  const queryParams = [];
+  // start query with info before WHERE clause
+  let queryString = `
+  SELECT properties.*, avg(property_reviews.rating) as average_rating
+  FROM properties
+  JOIN property_reviews ON properties.id = property_id
+  `;
+
+  // check to see if city has been passed in as an option (if so add city to params array and create a WHERE clause)
+  if (options.city) {
+    queryParams.push(`%${options.city}%`);
+    queryString += `WHERE city LIKE $${queryParams.length} `;
+  }
+
+  //this one doesnt need template literal because it needs to be an exact match for owner id
+  if (options.owner_id) {
+    queryParams.push(options.owner_id);
+    if (queryParams.length === 1) {
+      queryString += `WHERE owner_id = $${queryParams.length} \n`;
+    } else {
+      queryString += `AND owner_id = $${queryParams.length} \n`;
+    }
+  }
+
+  if (options.minimum_price_per_night && options.maximum_price_per_night) {
+    queryParams.push(options.minimum_price_per_night * 100);
+    queryParams.push(options.maximum_price_per_night * 100);
+    if (queryParams.length === 2) {
+      queryString += `WHERE cost_per_night >= $${queryParams.length - 1} AND cost_per_night <= $${queryParams.length} \n`;
+    } else {
+      queryString += `AND cost_per_night >= $${queryParams.length - 1} AND cost_per_night <= $${queryParams.length} \n`;
+    }
+  }
+
+
+  queryString += `
+    GROUP BY properties.id \n
+    `;
+  //not sure how to do min rating
+  if (options.minimum_rating) {
+    queryParams.push(options.minimum_rating);
+    queryString += `HAVING AVG(property_reviews.rating) >= $${queryParams.length} \n`;
+  }
+
+
+  //adding SQL queries that go after the where clause
+  queryParams.push(limit);
+  queryString += `
+  ORDER BY cost_per_night
+  LIMIT $${queryParams.length};
+  `;
+
+  // 5
+  console.log(queryString, queryParams);
+
+  // run the query
+  return pool.query(queryString, queryParams)
+    .then(res => res.rows);
 };
+
 exports.getAllProperties = getAllProperties;
 
 
